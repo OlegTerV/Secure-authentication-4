@@ -1,0 +1,130 @@
+/*
+ * Copyright (C) 2023 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.example.inventory.ui.item
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.inventory.data.ItemsRepository
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
+/**
+ * ViewModel to retrieve and update an item from the [ItemsRepository]'s data source.
+ */
+class ItemEditViewModel(
+    savedStateHandle: SavedStateHandle,
+    private val itemsRepository: ItemsRepository
+) : ViewModel() {
+
+    /**
+     * Holds current item ui state
+     */
+    private val itemId: Int = checkNotNull(savedStateHandle[ItemEditDestination.itemIdArg])
+
+    init {
+        viewModelScope.launch {
+            itemUiState = itemsRepository.getItemStream(itemId)
+                .filterNotNull()
+                .first()
+                .toItemUiState(true)
+        }
+    }
+
+    var itemUiState by mutableStateOf(ItemUiState())
+        private set
+
+    private fun validateInput(uiState: ItemDetails = itemUiState.itemDetails): Boolean {
+        var flag = true
+        for ((_, value) in validateFields(uiState)) {
+            if (value) {
+                flag = false
+            }
+        }
+        return flag
+        /*
+        return with(uiState) {
+            name.isNotBlank() && price.isNotBlank() && quantity.isNotBlank()
+                    && suppliers_name.isNotBlank() && suppliers_email.isNotBlank() && suppliers_mobile_phone.isNotBlank()
+        }*/
+    }
+
+    private fun validateFields(uiState: ItemDetails = itemUiState.itemDetails): MutableMap<String, Boolean>{
+        val isValidFiled_map: MutableMap<String, Boolean> = mutableMapOf()
+
+        if (uiState.price.isNotBlank()) {
+            isValidFiled_map["price"] = !uiState.price.matches(regex_price)
+        } else {
+            isValidFiled_map["price"] = true
+        }
+
+        if (uiState.quantity.isNotBlank()) {
+            isValidFiled_map["quantity"] = !uiState.quantity.matches(regex_quantity)
+        } else {
+            isValidFiled_map["quantity"] = true
+        }
+
+        if (uiState.suppliers_email.isNotBlank()) {
+            isValidFiled_map["suppliers_email"] = !uiState.suppliers_email.matches(regex_suppliers_email)
+        } else {
+            isValidFiled_map["suppliers_email"] = true
+        }
+
+        if (uiState.suppliers_mobile_phone.isNotBlank()) {
+            isValidFiled_map["suppliers_mobile_phone"] = !uiState.suppliers_mobile_phone.matches(regex_suppliers_mobile_phone)
+        } else {
+            isValidFiled_map["suppliers_mobile_phone"] = true
+        }
+
+        return isValidFiled_map
+    }
+
+    fun updateUiState(itemDetails: ItemDetails) {
+        itemUiState =
+            ItemUiState(itemDetails = itemDetails, isEntryValid = validateInput(itemDetails),
+                isValidFiled = validateFields(itemDetails))
+    }
+
+    suspend fun updateItem() {
+        if (validateInput(itemUiState.itemDetails)) {
+            itemsRepository.updateItem(itemUiState.itemDetails.toItem())
+        }
+    }
+
+    val regex_price = Regex("[0-9]+(\\.[0-9]+)?$") // скатал у deepSeek
+    val regex_quantity = Regex("[0-9]+")
+    val regex_suppliers_email = Regex(
+        ("[a-zA-Z0-9\\+\\.\\_\\%\\-\\+]{1,256}" +
+                "\\@" +
+                "[a-zA-Z0-9][a-zA-Z0-9\\-]{0,64}" +
+                "(" +
+                "\\." +
+                "[a-zA-Z0-9][a-zA-Z0-9\\-]{0,25}" +
+                ")+"))
+    val regex_suppliers_mobile_phone= Regex( // sdd = space, dot, or dash
+        ("(\\+[0-9]+[\\- \\.]*)?" // +<digits><sdd>*
+                + "(\\([0-9]+\\)[\\- \\.]*)?" // (<digits>)<sdd>*
+                + "([0-9][0-9\\- \\.]+[0-9])"))
+
+
+
+}
+
